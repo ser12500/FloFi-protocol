@@ -1,0 +1,635 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Lending Protocol</title>
+    <script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/web3@1.8.0/dist/web3.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+</head>
+
+<body class="bg-gray-100 min-h-screen">
+    <div id="root"></div>
+    <script type="text/babel">
+        const { useState, useEffect, useCallback } = React;
+
+        const LENDING_POOL_ABI = [
+            {
+                "inputs": [{ "internalType": "address", "name": "_token", "type": "address" }, { "internalType": "address", "name": "_priceFeed", "type": "address" }],
+                "stateMutability": "nonpayable",
+                "type": "constructor"
+            },
+            {
+                "anonymous": false,
+                "inputs": [{ "indexed": true, "internalType": "address", "name": "user", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }, { "indexed": false, "internalType": "uint256", "name": "collateral", "type": "uint256" }],
+                "name": "Borrow",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [{ "indexed": true, "internalType": "address", "name": "user", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "Deposit",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [{ "indexed": true, "internalType": "address", "name": "user", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }, { "indexed": false, "internalType": "uint256", "name": "bonus", "type": "uint256" }],
+                "name": "Liquidate",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [{ "indexed": true, "internalType": "address", "name": "user", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "Repay",
+                "type": "event"
+            },
+            {
+                "anonymous": false,
+                "inputs": [{ "indexed": true, "internalType": "address", "name": "user", "type": "address" }, { "indexed": false, "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "Withdraw",
+                "type": "event"
+            },
+            {
+                "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                "name": "balances",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "borrow",
+                "outputs": [],
+                "stateMutability": "payable",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                "name": "borrows",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                "name": "collaterals",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "deposit",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "getInterestRate",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "getLatestPrice",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
+                "name": "isSolvent",
+                "outputs": [{ "internalType": "bool", "name": "", "type": "bool" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "address", "name": "user", "type": "address" }],
+                "name": "liquidate",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "priceFeed",
+                "outputs": [{ "internalType": "contract AggregatorV3Interface", "name": "", "type": "address" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "owner",
+                "outputs": [{ "internalType": "address", "name": "", "type": "address" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "repay",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "token",
+                "outputs": [{ "internalType": "contract IERC20", "name": "", "type": "address" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "totalBorrows",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [],
+                "name": "totalDeposits",
+                "outputs": [{ "internalType": "uint256", "name": "", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "inputs": [{ "internalType": "uint256", "name": "amount", "type": "uint256" }],
+                "name": "withdraw",
+                "outputs": [],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ];
+
+        const TOKEN_ABI = [
+            {
+                "constant": true,
+                "inputs": [{ "name": "_owner", "type": "address" }],
+                "name": "balanceOf",
+                "outputs": [{ "name": "balance", "type": "uint256" }],
+                "stateMutability": "view",
+                "type": "function"
+            },
+            {
+                "constant": false,
+                "inputs": [{ "name": "_spender", "type": "address" }, { "name": "_value", "type": "uint256" }],
+                "name": "approve",
+                "outputs": [{ "name": "success", "type": "bool" }],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            },
+            {
+                "constant": false,
+                "inputs": [{ "name": "_to", "type": "address" }, { "name": "_value", "type": "uint256" }],
+                "name": "transfer",
+                "outputs": [{ "name": "success", "type": "bool" }],
+                "stateMutability": "nonpayable",
+                "type": "function"
+            }
+        ];
+
+        const NETWORKS = {
+            '31337': { name: 'Anvil', poolAddress: '0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0', tokenAddress: '0x5FbDB2315678afecb367f032d93F642f64180aa3' },
+            '11155111': { name: 'Sepolia', poolAddress: 'YOUR_SEPOLIA_POOL_ADDRESS', tokenAddress: 'YOUR_SEPOLIA_TOKEN_ADDRESS' },
+            '42161': { name: 'Arbitrum', poolAddress: 'YOUR_ARBITRUM_POOL_ADDRESS', tokenAddress: 'YOUR_ARBITRUM_TOKEN_ADDRESS' },
+            '10': { name: 'Optimism', poolAddress: 'YOUR_OPTIMISM_POOL_ADDRESS', tokenAddress: 'YOUR_OPTIMISM_TOKEN_ADDRESS' }
+        };
+
+        function App() {
+            const [web3, setWeb3] = useState(null);
+            const [account, setAccount] = useState('');
+            const [network, setNetwork] = useState('');
+            const [pool, setPool] = useState(null);
+            const [token, setToken] = useState(null);
+            const [balance, setBalance] = useState('0');
+            const [borrow, setBorrow] = useState('0');
+            const [collateral, setCollateral] = useState('0');
+            const [interestRate, setInterestRate] = useState('0');
+            const [ethPrice, setEthPrice] = useState('0');
+            const [depositAmount, setDepositAmount] = useState('');
+            const [withdrawAmount, setWithdrawAmount] = useState('');
+            const [borrowAmount, setBorrowAmount] = useState('');
+            const [repayAmount, setRepayAmount] = useState('');
+            const [liquidateAddress, setLiquidateAddress] = useState('');
+            const [loading, setLoading] = useState(false);
+            const [error, setError] = useState('');
+            const [transactions, setTransactions] = useState([]);
+            const [isSolvent, setIsSolvent] = useState(true);
+
+            const updateUserData = useCallback(async (poolContract, account, web3Instance) => {
+                if (!poolContract || !account || !web3Instance) return;
+                try {
+                    const balance = await poolContract.methods.balances(account).call();
+                    const borrow = await poolContract.methods.borrows(account).call();
+                    const collateral = await poolContract.methods.collaterals(account).call();
+                    const rate = await poolContract.methods.getInterestRate().call();
+                    const price = await poolContract.methods.getLatestPrice().call();
+                    const solvent = await poolContract.methods.isSolvent(account).call();
+                    setBalance(web3Instance.utils.fromWei(balance, 'ether'));
+                    setBorrow(web3Instance.utils.fromWei(borrow, 'ether'));
+                    setCollateral(web3Instance.utils.fromWei(collateral, 'ether'));
+                    setInterestRate(web3Instance.utils.fromWei(rate, 'ether'));
+                    setEthPrice(web3Instance.utils.fromWei(price, 'ether'));
+                    setIsSolvent(solvent);
+                } catch (err) {
+                    console.error('Ошибка обновления данных:', err);
+                    setError('Не удалось обновить данные: ' + err.message);
+                }
+            }, []);
+
+            useEffect(() => {
+                let interval;
+                async function init() {
+                    if (!window.ethereum) {
+                        setError('Пожалуйста, установите MetaMask');
+                        return;
+                    }
+
+                    try {
+                        const web3Instance = new Web3(window.ethereum);
+                        setWeb3(web3Instance);
+
+                        const accounts = await window.ethereum.request({ method: 'eth_requestAccounts' });
+                        if (accounts.length === 0) {
+                            setError('Не удалось получить аккаунт MetaMask');
+                            return;
+                        }
+                        setAccount(accounts[0]);
+
+                        const chainId = await web3Instance.eth.getChainId();
+                        setNetwork(NETWORKS[chainId]?.name || 'Неизвестная сеть');
+
+                        if (NETWORKS[chainId]) {
+                            const poolContract = new web3Instance.eth.Contract(LENDING_POOL_ABI, NETWORKS[chainId].poolAddress);
+                            const tokenContract = new web3Instance.eth.Contract(TOKEN_ABI, NETWORKS[chainId].tokenAddress);
+                            setPool(poolContract);
+                            setToken(tokenContract);
+
+                            await updateUserData(poolContract, accounts[0], web3Instance);
+                        } else {
+                            setError('Выберите поддерживаемую сеть (Anvil, Sepolia, Arbitrum, Optimism)');
+                        }
+
+                        window.ethereum.on('accountsChanged', (accounts) => {
+                            if (accounts.length > 0) {
+                                setAccount(accounts[0]);
+                                updateUserData(pool, accounts[0], web3Instance);
+                            } else {
+                                setAccount('');
+                                setError('Аккаунт отключён');
+                            }
+                        });
+
+                        window.ethereum.on('chainChanged', async (chainId) => {
+                            chainId = await web3Instance.eth.getChainId(); // Обновляем chainId
+                            setNetwork(NETWORKS[chainId]?.name || 'Неизвестная сеть');
+                            if (NETWORKS[chainId]) {
+                                const poolContract = new web3Instance.eth.Contract(LENDING_POOL_ABI, NETWORKS[chainId].poolAddress);
+                                const tokenContract = new web3Instance.eth.Contract(TOKEN_ABI, NETWORKS[chainId].tokenAddress);
+                                setPool(poolContract);
+                                setToken(tokenContract);
+                                updateUserData(poolContract, accounts[0], web3Instance);
+                            } else {
+                                setPool(null);
+                                setToken(null);
+                                setError('Выберите поддерживаемую сеть');
+                            }
+                        });
+
+                        interval = setInterval(() => {
+                            if (pool && account && web3Instance) {
+                                updateUserData(pool, account, web3Instance);
+                            }
+                        }, 10000);
+                    } catch (err) {
+                        console.error('Ошибка инициализации:', err);
+                        setError('Ошибка инициализации: ' + err.message);
+                    }
+                }
+
+                init();
+                return () => {
+                    if (interval) clearInterval(interval);
+                    if (window.ethereum) {
+                        window.ethereum.removeAllListeners('accountsChanged');
+                        window.ethereum.removeAllListeners('chainChanged');
+                    }
+                };
+            }, [updateUserData]);
+
+            const switchNetwork = async (chainId) => {
+                try {
+                    await window.ethereum.request({
+                        method: 'wallet_switchEthereumChain',
+                        params: [{ chainId: '0x' + Number(chainId).toString(16) }],
+                    });
+                } catch (err) {
+                    if (chainId === '31337') {
+                        try {
+                            await window.ethereum.request({
+                                method: 'wallet_addEthereumChain',
+                                params: [{
+                                    chainId: '0x7A69',
+                                    chainName: 'Anvil',
+                                    rpcUrls: ['http://127.0.0.1:8545'],
+                                    nativeCurrency: { name: 'ETH', symbol: 'ETH', decimals: 18 },
+                                    blockExplorerUrls: []
+                                }]
+                            });
+                        } catch (addError) {
+                            setError('Ошибка добавления сети Anvil: ' + addError.message);
+                        }
+                    } else {
+                        setError('Ошибка переключения сети: ' + err.message);
+                    }
+                }
+            };
+
+            const handleDeposit = async () => {
+                if (!pool || !token || !depositAmount || isNaN(depositAmount) || depositAmount <= 0) {
+                    setError('Введите корректную сумму депозита');
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const amount = web3.utils.toWei(depositAmount, 'ether');
+                    await token.methods.approve(pool._address, amount).send({ from: account });
+                    const tx = await pool.methods.deposit(amount).send({ from: account });
+                    setTransactions((prev) => [
+                        { type: 'Deposit', amount: depositAmount, txHash: tx.transactionHash },
+                        ...prev.slice(0, 9) // Ограничиваем до 10 транзакций
+                    ]);
+                    await updateUserData(pool, account, web3);
+                } catch (err) {
+                    setError('Ошибка депозита: ' + err.message);
+                }
+                setLoading(false);
+            };
+
+            const handleWithdraw = async () => {
+                if (!pool || !withdrawAmount || isNaN(withdrawAmount) || withdrawAmount <= 0) {
+                    setError('Введите корректную сумму вывода');
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const amount = web3.utils.toWei(withdrawAmount, 'ether');
+                    const tx = await pool.methods.withdraw(amount).send({ from: account });
+                    setTransactions((prev) => [
+                        { type: 'Withdraw', amount: withdrawAmount, txHash: tx.transactionHash },
+                        ...prev.slice(0, 9)
+                    ]);
+                    await updateUserData(pool, account, web3);
+                } catch (err) {
+                    setError('Ошибка вывода: ' + err.message);
+                }
+                setLoading(false);
+            };
+
+            const handleBorrow = async () => {
+                if (!pool || !borrowAmount || isNaN(borrowAmount) || borrowAmount <= 0) {
+                    setError('Введите корректную сумму займа');
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const amount = web3.utils.toWei(borrowAmount, 'ether');
+                    const ethPrice = await pool.methods.getLatestPrice().call();
+                    const collateral = web3.utils.toWei(
+                        ((borrowAmount * 150 / 100) / (ethPrice / 1e18)).toString(),
+                        'ether'
+                    );
+                    const tx = await pool.methods.borrow(amount).send({ from: account, value: collateral });
+                    setTransactions((prev) => [
+                        { type: 'Borrow', amount: borrowAmount, txHash: tx.transactionHash },
+                        ...prev.slice(0, 9)
+                    ]);
+                    await updateUserData(pool, account, web3);
+                } catch (err) {
+                    setError('Ошибка займа: ' + err.message);
+                }
+                setLoading(false);
+            };
+
+            const handleRepay = async () => {
+                if (!pool || !token || !repayAmount || isNaN(repayAmount) || repayAmount <= 0) {
+                    setError('Введите корректную сумму погашения');
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const amount = web3.utils.toWei(repayAmount, 'ether');
+                    await token.methods.approve(pool._address, amount).send({ from: account });
+                    const tx = await pool.methods.repay(amount).send({ from: account });
+                    setTransactions((prev) => [
+                        { type: 'Repay', amount: repayAmount, txHash: tx.transactionHash },
+                        ...prev.slice(0, 9)
+                    ]);
+                    await updateUserData(pool, account, web3);
+                } catch (err) {
+                    setError('Ошибка погашения: ' + err.message);
+                }
+                setLoading(false);
+            };
+
+            const handleLiquidate = async () => {
+                if (!pool || !liquidateAddress || !web3.utils.isAddress(liquidateAddress)) {
+                    setError('Введите корректный адрес для ликвидации');
+                    return;
+                }
+                setLoading(true);
+                setError('');
+                try {
+                    const tx = await pool.methods.liquidate(liquidateAddress).send({ from: account });
+                    setTransactions((prev) => [
+                        { type: 'Liquidate', address: liquidateAddress, txHash: tx.transactionHash },
+                        ...prev.slice(0, 9)
+                    ]);
+                    await updateUserData(pool, account, web3);
+                } catch (err) {
+                    setError('Ошибка ликвидации: ' + err.message);
+                }
+                setLoading(false);
+            };
+
+            const getExplorerLink = (txHash, chainId) => {
+                if (chainId === '31337') return '#'; // Нет обозревателя для Anvil
+                const explorers = {
+                    '11155111': 'https://sepolia.etherscan.io/tx/',
+                    '42161': 'https://arbiscan.io/tx/',
+                    '10': 'https://optimistic.etherscan.io/tx/'
+                };
+                return explorers[chainId] ? `${explorers[chainId]}${txHash}` : '#';
+            };
+
+            return (
+                <div className="max-w-4xl mx-auto p-6 bg-white rounded-lg shadow-lg my-6">
+                    <h1 className="text-4xl font-bold mb-6 text-center text-blue-600">Lending Protocol</h1>
+                    <div className="mb-6 flex justify-between items-center">
+                        <p className="text-lg"><strong>Аккаунт:</strong> {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'Не подключён'}</p>
+                        <div>
+                            <label className="mr-2">Сеть:</label>
+                            <select
+                                className="p-2 border rounded"
+                                value={network}
+                                onChange={(e) => switchNetwork(Object.keys(NETWORKS).find(key => NETWORKS[key].name === e.target.value))}
+                            >
+                                {Object.values(NETWORKS).map(n => (
+                                    <option key={n.name} value={n.name}>{n.name}</option>
+                                ))}
+                            </select>
+                        </div>
+                    </div>
+                    {error && <div className="mb-4 p-4 bg-red-100 text-red-700 rounded">{error}</div>}
+                    {loading && <div className="mb-4 p-4 bg-blue-100 text-blue-700 rounded">Обработка...</div>}
+                    <div className="grid grid-cols-2 gap-6 mb-6">
+                        <div className="p-4 bg-gray-50 rounded-lg">
+                            <p><strong>Баланс депозита:</strong> {balance} DAI</p>
+                            <p><strong>Баланс займа:</strong> {borrow} DAI</p>
+                            <p><strong>Залог:</strong> {collateral} ETH</p>
+                            <p><strong>Цена ETH:</strong> ${ethPrice}</p>
+                            <p><strong>Процентная ставка:</strong> {interestRate}%</p>
+                            <p><strong>Статус:</strong> {isSolvent ? 'Платежеспособный' : 'НЕплатежеспособный'}</p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4">
+                            <div>
+                                <input
+                                    type="number"
+                                    placeholder="Сумма депозита (DAI)"
+                                    className="w-full p-2 border rounded"
+                                    value={depositAmount}
+                                    onChange={(e) => setDepositAmount(e.target.value)}
+                                    min="0"
+                                    step="0.01"
+                                />
+                                <button
+                                    className="w-full mt-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+                                    onClick={handleDeposit}
+                                    disabled={loading || !pool || !token}
+                                >
+                                    Депозит
+                                </button>
+                            </div>
+                            <div>
+                                <input
+                                    type="number"
+                                    placeholder="Сумма вывода (DAI)"
+                                    className="w-full p-2 border rounded"
+                                    value={withdrawAmount}
+                                    onChange={(e) => setWithdrawAmount(e.target.value)}
+                                    min="0"
+                                    step="0.01"
+                                />
+                                <button
+                                    className="w-full mt-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+                                    onClick={handleWithdraw}
+                                    disabled={loading || !pool}
+                                >
+                                    Вывод
+                                </button>
+                            </div>
+                            <div>
+                                <input
+                                    type="number"
+                                    placeholder="Сумма займа (DAI)"
+                                    className="w-full p-2 border rounded"
+                                    value={borrowAmount}
+                                    onChange={(e) => setBorrowAmount(e.target.value)}
+                                    min="0"
+                                    step="0.01"
+                                />
+                                <button
+                                    className="w-full mt-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+                                    onClick={handleBorrow}
+                                    disabled={loading || !pool}
+                                >
+                                    Занять
+                                </button>
+                            </div>
+                            <div>
+                                <input
+                                    type="number"
+                                    placeholder="Сумма погашения (DAI)"
+                                    className="w-full p-2 border rounded"
+                                    value={repayAmount}
+                                    onChange={(e) => setRepayAmount(e.target.value)}
+                                    min="0"
+                                    step="0.01"
+                                />
+                                <button
+                                    className="w-full mt-2 p-2 bg-blue-500 text-white rounded hover:bg-blue-600 disabled:bg-gray-400"
+                                    onClick={handleRepay}
+                                    disabled={loading || !pool || !token}
+                                >
+                                    Погасить
+                                </button>
+                            </div>
+                            <div>
+                                <input
+                                    type="text"
+                                    placeholder="Адрес для ликвидации"
+                                    className="w-full p-2 border rounded"
+                                    value={liquidateAddress}
+                                    onChange={(e) => setLiquidateAddress(e.target.value)}
+                                />
+                                <button
+                                    className="w-full mt-2 p-2 bg-red-500 text-white rounded hover:bg-red-600 disabled:bg-gray-400"
+                                    onClick={handleLiquidate}
+                                    disabled={loading || !pool}
+                                >
+                                    Ликвидировать
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    <div className="mt-6">
+                        <h2 className="text-2xl font-semibold mb-4">История транзакций</h2>
+                        <div className="overflow-x-auto">
+                            <table className="w-full bg-gray-50 rounded-lg">
+                                <thead>
+                                    <tr className="bg-blue-100">
+                                        <th className="p-2 text-left">Тип</th>
+                                        <th className="p-2 text-left">Сумма/Адрес</th>
+                                        <th className="p-2 text-left">Хэш транзакции</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {transactions.map((tx, index) => (
+                                        <tr key={index} className="border-t">
+                                            <td className="p-2">{tx.type}</td>
+                                            <td className="p-2">{tx.amount || tx.address}</td>
+                                            <td className="p-2">
+                                                <a
+                                                    href={getExplorerLink(tx.txHash, window.ethereum?.networkVersion)}
+                                                    target="_blank"
+                                                    className="text-blue-500 hover:underline"
+                                                    rel="noopener noreferrer"
+                                                >
+                                                    {tx.txHash ? `${tx.txHash.slice(0, 6)}...${tx.txHash.slice(-4)}` : 'N/A'}
+                                                </a>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        ReactDOM.render(<App />, document.getElementById('root'));
+    </script>
+</body>
+
+</html>
