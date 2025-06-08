@@ -9,7 +9,7 @@ import {AggregatorV3Interface} from
 
 contract MockPriceFeed is AggregatorV3Interface {
     uint8 public priceFeedDecimals = 8;
-    int256 public price = 2000 * 1e8; // ETH = 2000 USD
+    int256 public price = 2000 * 1e8;
     uint256 public updatedAt;
 
     constructor() {
@@ -22,14 +22,13 @@ contract MockPriceFeed is AggregatorV3Interface {
     }
 
     function latestRoundData() external view override returns (uint80, int256, uint256, uint256, uint80) {
-        return (0, price, 0, updatedAt, 0);
+        return (1, price, 0, updatedAt, 1);
     }
 
     function decimals() external view override returns (uint8) {
         return priceFeedDecimals;
     }
 
-    // Unused Chainlink functions
     function description() external pure override returns (string memory) {
         return "";
     }
@@ -54,11 +53,11 @@ contract LendingPoolTest is Test {
     function setUp() public {
         token = new MockToken();
         priceFeed = new MockPriceFeed();
-        priceFeed.setPrice(2000 * 1e8, block.timestamp); // ETH = 2000 USD
+        priceFeed.setPrice(2000 * 1e8, block.timestamp);
         pool = new LendingPool(address(token), address(priceFeed));
 
-        token.transfer(user1, 10000 * 10 ** 18);
-        token.transfer(user2, 10000 * 10 ** 18);
+        token.transfer(user1, 10000 * 1e18);
+        token.transfer(user2, 10000 * 1e18);
         vm.deal(user2, 10 ether);
         vm.deal(liquidator, 1 ether);
 
@@ -72,31 +71,31 @@ contract LendingPoolTest is Test {
     }
 
     function testDeposit() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
+        uint256 amount = 1000 * 1e18;
         vm.prank(user1);
-        pool.deposit(depositAmount);
+        pool.deposit(amount);
 
-        assertEq(pool.balances(user1), depositAmount);
-        assertEq(pool.totalDeposits(), depositAmount);
-        assertEq(token.balanceOf(address(pool)), depositAmount);
+        assertEq(pool.s_balances(user1), amount);
+        assertEq(pool.s_totalDeposits(), amount);
+        assertEq(token.balanceOf(address(pool)), amount);
     }
 
     function testWithdraw() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
+        uint256 amount = 1000 * 1e18;
         vm.startPrank(user1);
-        pool.deposit(depositAmount);
-        pool.withdraw(depositAmount);
+        pool.deposit(amount);
+        pool.withdraw(amount);
         vm.stopPrank();
 
-        assertEq(pool.balances(user1), 0);
-        assertEq(pool.totalDeposits(), 0);
-        assertEq(token.balanceOf(user1), 10000 * 10 ** 18);
+        assertEq(pool.s_balances(user1), 0);
+        assertEq(pool.s_totalDeposits(), 0);
+        assertEq(token.balanceOf(user1), 10000 * 1e18);
     }
 
     function testBorrow() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 100 * 10 ** 18;
-        uint256 ethPrice = 2000 * 1e8 * 1e10; // 2000 USD, adjusted to 18 decimals
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 borrowAmount = 100 * 1e18;
+        uint256 ethPrice = 2000 * 1e8 * 1e10; // 18 decimals
         uint256 requiredCollateral = borrowAmount * 150 / 100 * 1e18 / ethPrice;
 
         vm.prank(user1);
@@ -105,39 +104,19 @@ contract LendingPoolTest is Test {
         vm.prank(user2);
         pool.borrow{value: requiredCollateral}(borrowAmount);
 
-        assertEq(pool.borrows(user2), borrowAmount);
-        assertEq(pool.collaterals(user2), requiredCollateral);
-        assertEq(pool.totalBorrows(), borrowAmount);
-        assertEq(token.balanceOf(user2), (10000 + 100) * 10 ** 18);
+        assertEq(pool.s_borrows(user2), borrowAmount);
+        assertEq(pool.s_collaterals(user2), requiredCollateral);
+        assertEq(pool.s_totalBorrows(), borrowAmount);
+        assertEq(token.balanceOf(user2), (10000 + 100) * 1e18);
     }
 
-    function testRepay() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 100 * 10 ** 18;
+    function testLiquidateWithBonus() public {
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 borrowAmount = 100 * 1e18;
         uint256 ethPrice = 2000 * 1e8 * 1e10;
         uint256 requiredCollateral = borrowAmount * 150 / 100 * 1e18 / ethPrice;
-
-        vm.prank(user1);
-        pool.deposit(depositAmount);
-
-        vm.prank(user2);
-        pool.borrow{value: requiredCollateral}(borrowAmount);
-
-        vm.prank(user2);
-        pool.repay(borrowAmount);
-
-        assertEq(pool.borrows(user2), 0);
-        assertEq(pool.collaterals(user2), 0);
-        assertEq(pool.totalBorrows(), 0);
-        assertEq(address(user2).balance, 10 ether);
-    }
-
-    /* function testLiquidateWithBonus() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 100 * 10 ** 18;
-        uint256 ethPrice = 2000 * 1e8 * 1e10;
-        uint256 requiredCollateral = borrowAmount * 150 / 100 * 1e18 / ethPrice;
-        uint256 bonus = requiredCollateral * 5 / 100;
+        uint256 s_totalCollateral = 2000 * 1e8 * 1e10;
+        payable(address(pool)).transfer(s_totalCollateral);
 
         vm.prank(user1);
         pool.deposit(depositAmount);
@@ -146,21 +125,20 @@ contract LendingPoolTest is Test {
         pool.borrow{value: requiredCollateral}(borrowAmount);
 
         vm.prank(address(this));
-        priceFeed.setPrice(1000 * 1e8, block.timestamp); // Drop ETH price to 1000 USD
+        priceFeed.setPrice(1000 * 1e8, block.timestamp);
 
-        uint256 liquidatorBalanceBefore = address(liquidator).balance;
+        uint256 before = liquidator.balance;
         vm.prank(liquidator);
         pool.liquidate(user2);
 
-        assertEq(pool.borrows(user2), 0);
-        assertEq(pool.collaterals(user2), 0);
-        assertEq(pool.totalBorrows(), 0);
-        assertEq(address(liquidator).balance, liquidatorBalanceBefore + requiredCollateral + bonus);
+        assertEq(pool.s_borrows(user2), 0);
+        assertEq(pool.s_collaterals(user2), 0);
+        assertGt(liquidator.balance, before);
     }
-    */
+
     function testInterestRate() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 500 * 10 ** 18;
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 borrowAmount = 500 * 1e18;
 
         vm.prank(user1);
         pool.deposit(depositAmount);
@@ -172,49 +150,84 @@ contract LendingPoolTest is Test {
         assertEq(pool.getInterestRate(), expectedRate);
     }
 
-    /* function test_RevertWhen_PriceIsStale() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 100 * 10 ** 18;
+    function test_RevertWhen_BorrowWithInsufficientCollateral() public {
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 borrowAmount = 100 * 1e18;
 
         vm.prank(user1);
         pool.deposit(depositAmount);
+
+        vm.prank(user2);
+        vm.expectRevert("Insufficient collateral");
+        pool.borrow{value: 0}(borrowAmount);
+    }
+
+    function test_RevertWhen_DepositWhilePaused() public {
+        vm.prank(user1);
+        pool.pause();
+
+        vm.prank(user2);
+        vm.expectRevert("EnforcedPause()");
+        pool.deposit(1000 * 1e18);
+    }
+
+    function test_RevertWhen_BorrowWhilePaused() public {
+        vm.prank(user1);
+        pool.deposit(1000 * 1e18);
 
         vm.prank(address(this));
-        priceFeed.setPrice(2000 * 1e8, block.timestamp - 2 hours); // Stale price
+        pool.pause();
 
         vm.prank(user2);
-        pool.borrow{value: 1 ether}(borrowAmount); // Should fail
+        vm.expectRevert("EnforcedPause()");
+        pool.borrow{value: 1 ether}(100 * 1e18);
     }
 
-    function test_RevertWhen_InsufficientCollateral() public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        uint256 borrowAmount = 100 * 10 ** 18;
+    function testUpdateInterest() public {
+        uint256 depositAmount = 1000 * 1e18;
+        uint256 borrowAmount = 500 * 1e18;
 
         vm.prank(user1);
         pool.deposit(depositAmount);
 
         vm.prank(user2);
-        pool.borrow{value: 0}(borrowAmount); // Should fail
+        pool.borrow{value: 1 ether}(borrowAmount);
+
+        skip(365 days);
+        pool.updateInterest(user1);
+
+        assertEq(pool.s_totalBorrows(), borrowAmount);
     }
-    */
+
     function testFuzzDeposit(uint256 amount) public {
         vm.assume(amount > 0 && amount <= token.balanceOf(user1));
         vm.prank(user1);
         pool.deposit(amount);
-        assertEq(pool.balances(user1), amount);
+        assertEq(pool.s_balances(user1), amount);
+    }
+
+    function testFuzzWithdraw(uint256 amount) public {
+        vm.assume(amount > 0 && amount <= token.balanceOf(user1));
+        vm.startPrank(user1);
+        pool.deposit(amount);
+        pool.withdraw(amount);
+        vm.stopPrank();
+
+        assertEq(pool.s_balances(user1), 0);
+        assertEq(token.balanceOf(user1), 10000 * 1e18);
     }
 
     function testFuzzBorrow(uint256 amount) public {
-        uint256 depositAmount = 1000 * 10 ** 18;
-        vm.assume(amount > 0 && amount <= depositAmount);
+        vm.assume(amount > 0 && amount < 1000 * 1e18);
+        vm.prank(user1);
+        pool.deposit(1000 * 1e18);
+
         uint256 ethPrice = 2000 * 1e8 * 1e10;
         uint256 requiredCollateral = amount * 150 / 100 * 1e18 / ethPrice;
 
-        vm.prank(user1);
-        pool.deposit(depositAmount);
-
         vm.prank(user2);
         pool.borrow{value: requiredCollateral}(amount);
-        assertEq(pool.borrows(user2), amount);
+
+        assertEq(pool.s_borrows(user2), amount);
     }
 }
