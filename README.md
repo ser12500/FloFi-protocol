@@ -1,7 +1,12 @@
-![alt text](image-1.png)              ![alt text](image-2.png)
 
 
 
+<p align="center">
+        <img src="./image/image-1.png" width="500" alt=""/>
+</p>
+<p align="center">
+        <img src="./image/image-2.png" width="500" alt=""/>
+</p>
 
 
 
@@ -111,11 +116,6 @@ curl -L https://foundry.paradigm.xyz | bash
 foundryup
 
 
-
-Clone the Repository:
-
-git clone https://github.com/your-repo/lending-protocol.git
-cd lending-protocol
 
 
 
